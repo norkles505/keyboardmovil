@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Prueba - Teclado Movil</title>
+<style>
+  body { font-family: sans-serif; background: #1e1e1e; color: #eee; padding: 20px; max-width: 400px; margin: auto; }
+  input { width: 100%; padding: 8px; font-size: 16px; margin-bottom: 10px; box-sizing: border-box; }
+  button { padding: 10px 16px; margin: 4px; font-size: 15px; cursor: pointer; }
+  #status { padding: 10px; border-radius: 6px; margin-bottom: 15px; }
+  .ok { background: #1b4d2b; }
+  .bad { background: #4d1b1b; }
+  .wait { background: #4d4d1b; }
+  #cuenta { font-size: 22px; font-weight: bold; margin-bottom: 10px; min-height: 30px; }
+</style>
+</head>
+<body>
+  <h2>Prueba - Teclado Movil</h2>
+
+  <div id="status" class="wait">Sin conectar</div>
+
+  <label>IP del agente:</label>
+  <input id="ip" value="192.168.1.4">
+
+  <label>PIN:</label>
+  <input id="pin" placeholder="Ej: 7229">
+
+  <button onclick="conectar()">Conectar</button>
+
+  <hr>
+
+  <p>1) Haz clic en un boton. 2) Tienes 3 segundos para hacer clic en el Bloc de notas antes de que se envie la tecla.</p>
+  <div id="cuenta"></div>
+  <button onclick="conCuentaRegresiva(() => escribir('hola'))">Escribir "hola"</button>
+  <button onclick="conCuentaRegresiva(() => tecla('space'))">Espacio</button>
+  <button onclick="conCuentaRegresiva(() => tecla('enter'))">Enter</button>
+  <button onclick="conCuentaRegresiva(() => tecla('backspace'))">Backspace</button>
+
+  <script>
+    let ws = null;
+
+    function setStatus(text, cls) {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = cls;
+    }
+
+    function conectar() {
+      const ip = document.getElementById('ip').value.trim();
+      const pin = document.getElementById('pin').value.trim();
+
+      setStatus('Conectando...', 'wait');
+      ws = new WebSocket(`ws://${ip}:8765/`);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'auth', pin: pin }));
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'auth_ok') {
+          setStatus('Conectado y autenticado', 'ok');
+        } else if (msg.type === 'auth_fail') {
+          setStatus('PIN incorrecto', 'bad');
+        }
+      };
+
+      ws.onerror = () => setStatus('Error de conexion', 'bad');
+      ws.onclose = () => setStatus('Desconectado', 'bad');
+    }
+
+    function enviarTecla(key, action) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setStatus('No estas conectado todavia', 'bad');
+        return;
+      }
+      ws.send(JSON.stringify({ type: 'key', key: key, action: action }));
+    }
+
+    function tecla(key) {
+      enviarTecla(key, 'down');
+      setTimeout(() => enviarTecla(key, 'up'), 30);
+    }
+
+    async function escribir(texto) {
+      for (const c of texto) {
+        tecla(c);
+        await new Promise(r => setTimeout(r, 60));
+      }
+    }
+
+    function conCuentaRegresiva(accion) {
+      const cuentaEl = document.getElementById('cuenta');
+      let n = 3;
+      cuentaEl.textContent = `Cambia al Bloc de notas... ${n}`;
+      const iv = setInterval(() => {
+        n--;
+        if (n > 0) {
+          cuentaEl.textContent = `Cambia al Bloc de notas... ${n}`;
+        } else {
+          clearInterval(iv);
+          cuentaEl.textContent = 'Enviando...';
+          accion();
+          setTimeout(() => { cuentaEl.textContent = ''; }, 500);
+        }
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

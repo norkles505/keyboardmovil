@@ -1,0 +1,6 @@
+[
+    {
+        "merged": "com.tecladomovil.app-debug-23:/xml_network_security_config.xml.flat",
+        "source": "com.tecladomovil.app-main-25:/xml/network_security_config.xml"
+    }
+]

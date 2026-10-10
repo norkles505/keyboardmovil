@@ -845,7 +845,35 @@ class MainActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(escrituraInput)
+            // Fila con el campo de texto y, a la derecha, un boton "✕" que
+            // limpia SOLO el texto de este campo (en el celular). No manda
+            // nada a la PC: usa limpiarPanelEscritura(), que evita que el
+            // TextWatcher interprete la limpieza como una edicion real.
+            val botonLimpiar = Button(this@MainActivity).apply {
+                text = "✕"
+                textSize = 18f
+                isAllCaps = false
+                setPadding(0, 0, 0, 0)
+                minWidth = 0
+                minHeight = 0
+                layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                    gravity = android.view.Gravity.TOP
+                }
+                setOnClickListener {
+                    limpiarPanelEscritura()
+                    escrituraInput.requestFocus()
+                }
+            }
+            aplicarEstiloBoton(botonLimpiar)
+
+            val filaEscritura = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                escrituraInput.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(escrituraInput)
+                addView(botonLimpiar)
+            }
+            addView(filaEscritura)
         }
     }
 

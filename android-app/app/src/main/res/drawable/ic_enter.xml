@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Convertido del SVG "ejemplo3.svg" (flecha de Enter: una linea que baja y
+    dobla a la izquierda). A diferencia de los demas iconos de la grilla (que
+    son de relleno solido), este SVG original es un trazo (stroke) sin
+    relleno, asi que se pasa como strokeColor/strokeWidth en vez de
+    fillColor, con fillColor="@android:color/transparent" para que el interior
+    quede hueco tal como en el original. Mismo viewport (500x500) y mismo
+    grosor/cap/join de trazo que el SVG original para que se vea igual.
+
+    El color de trazo queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que el resto de los iconos de la grilla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="500"
+    android:viewportHeight="500">
+
+    <path
+        android:pathData="m 427.06966,142.19606 v 26.48941 c 0,37.08871 0,55.63219 -7.21837,69.79961 -6.34862,12.46107 -16.47862,22.59106 -28.93968,28.93969 -14.16742,7.21837 -32.71001,7.21837 -69.79961,7.21837 H 73.877458 m 0,0 88.298052,-88.29806 m -88.298052,88.29806 88.298052,88.29805"
+        android:fillColor="#00000000"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="44.149"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+</vector>

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.tecladomovil.app-mergeDebugResources-21:/values-mk/values-mk.xml",
+            "outputFile": "com.tecladomovil.app-mergeDebugResources-22:/values-mk/values-mk.xml",
             "map": [
                 {
                     "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-4\\931a813c0b1c56b2e997d06cbf8e44a0\\transformed\\core-1.13.1\\res\\values-mk\\values-mk.xml",

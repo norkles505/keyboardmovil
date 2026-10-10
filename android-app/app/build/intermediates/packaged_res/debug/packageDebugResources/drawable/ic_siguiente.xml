@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Convertido del SVG "next.svg" (pista siguiente: dos triangulos apuntando
+    a la derecha + una barra). Icono de relleno solido, se pasa directo
+    como fillColor. Mismo viewport (512x512) que el SVG original para que
+    las coordenadas del pathData calcen igual.
+
+    El color de relleno queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que el resto de los iconos de la grilla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <path
+        android:pathData="M0,381.4l237.7-118.9L0,143.6V381.4z M237.7,262.5v118.9l237.7-118.9L237.7,143.6V262.5z M475.4,143.6v118.9v118.9H512 V143.6H475.4z"
+        android:fillColor="#EAEAEA" />
+
+</vector>

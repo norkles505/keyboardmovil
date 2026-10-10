@@ -1,3 +1,30 @@
 R_DEF: Internal format may change without notice
 local
+drawable ic_abajo
+drawable ic_anterior
+drawable ic_arriba
+drawable ic_backspace
+drawable ic_cambiar_ventana
+drawable ic_captura
+drawable ic_captura_pantalla_movil
+drawable ic_cerrar
+drawable ic_copiar
+drawable ic_cortar
+drawable ic_derecha
+drawable ic_deshacer
+drawable ic_eliminar
+drawable ic_enter
+drawable ic_izquierda
+drawable ic_mas_brillo
+drawable ic_menos_brillo
+drawable ic_mute
+drawable ic_pegar
+drawable ic_portapapeles
+drawable ic_rehacer
+drawable ic_reproducir_pausa
+drawable ic_seleccionar_todo
+drawable ic_siguiente
+drawable ic_volumen_bajar
+drawable ic_volumen_subir
+drawable ic_win
 xml network_security_config

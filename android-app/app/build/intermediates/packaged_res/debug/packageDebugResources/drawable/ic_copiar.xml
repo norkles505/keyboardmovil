@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Convertido del SVG "copy.svg" (Font Awesome): un cuadrado redondeado
+    detras y una hoja con esquina superior derecha "levantada" adelante,
+    ambos como trazo (stroke), sin relleno. Viewport 640x640 (a diferencia
+    de los demas iconos que usan 500x500), tal cual el SVG original.
+
+    El rect original (con esquinas redondeadas via ry) se paso a mano como
+    pathData equivalente, porque los vector drawables de Android no tienen
+    elemento <rect>, solo <path>. El segundo path (la hoja) se copio tal
+    cual: Android interpreta los mismos comandos de path que SVG (incluidos
+    los arcos "A" con esquinas redondeadas de esquinas distintas).
+
+    El color del trazo queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que el resto de los iconos de la grilla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="640"
+    android:viewportHeight="640">
+
+    <path
+        android:pathData="M 246.335176,211.22652 H 529.208104 A 35.359116,35.359116 0 0 1 564.56722,246.585636 V 529.458564 A 35.359116,35.359116 0 0 1 529.208104,564.81768 H 246.335176 A 35.359116,35.359116 0 0 1 210.97606,529.458564 V 246.585636 A 35.359116,35.359116 0 0 1 246.335176,211.22652 Z"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M 204.1547,433.73849 H 110.55617 A 36.302026,36.302026 45 0 1 74.254144,397.43646 L 74.254144,121.28177 A 38.777164,38.777164 135 0 1 113.03131,82.504604 H 402.55102 A 24.115654,24.115654 45 0 1 426.66667,106.62026 L 426.66667,205.79742"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+</vector>

@@ -1,4 +1,4 @@
-#Sun Aug 09 18:30:33 BOT 2026
+#Thu Oct 08 22:03:56 BOT 2026
 base.2=C\:\\Users\\HP\\Desktop\\proyectos\\keyboardmovil\\android-app\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\2\\classes.dex
 path.2=2/classes.dex
 base.1=C\:\\Users\\HP\\Desktop\\proyectos\\keyboardmovil\\android-app\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex

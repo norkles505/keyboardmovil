@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Convertido del SVG "ejemplo2.svg" (Font Awesome): dos "esquineros" en
+    diagonal (arriba-izquierda y abajo-derecha) que simulan una herramienta
+    de recorte/captura, como trazo (stroke), sin relleno. Viewport 640x640,
+    tal cual el SVG original.
+
+    El color del trazo queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que el resto de los iconos de la grilla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="640"
+    android:viewportHeight="640">
+
+    <path
+        android:pathData="M 154.08097,65.773382 V 400.61391 c 0,31.78431 0,47.67789 6.18575,59.81727 5.44087,10.678 14.1229,19.36116 24.80175,24.80089 12.13996,6.18605 28.0324,6.18605 59.81671,6.18605 H 409.4678 m 170.2579,0 h -85.12894 m 0,85.12894 V 241.70654 c 0,-31.78431 0,-47.67675 -6.18605,-59.81671 -5.43973,-10.67885 -14.12289,-19.36088 -24.80089,-24.80175 -12.13938,-6.18575 -28.03296,-6.18575 -59.81727,-6.18575 H 239.20992 m -170.257901,0 h 85.128951"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+</vector>

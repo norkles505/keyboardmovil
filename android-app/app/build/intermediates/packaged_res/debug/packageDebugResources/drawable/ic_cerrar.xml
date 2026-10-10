@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Convertido del SVG "cerrar.svg" (una X hecha de 2 barras diagonales
+    cruzadas, en un solo path de relleno solido). Mismo viewport (500x500)
+    que el SVG original para que las coordenadas del pathData calcen igual.
+
+    El color de relleno queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que el resto de los iconos de la grilla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="500"
+    android:viewportHeight="500">
+
+    <path
+        android:pathData="m 58.541606,440.56652 c -22.638494,-22.63847 -22.638494,-59.34705 0,-81.98558 L 167.34559,249.77122 58.587965,141.01361 c -22.638461,-22.64028 -22.638461,-59.347058 0,-81.986762 22.638595,-22.640206 59.347115,-22.640206 81.985615,0 L 249.33694,167.78558 358.40763,58.710336 c 22.64428,-22.639669 59.34703,-22.639669 81.98559,0 22.64429,22.640218 22.64429,59.346514 0,81.984424 L 331.32256,249.77122 440.34684,358.79548 c 22.63846,22.64428 22.63846,59.34709 0,81.98557 -22.63853,22.6443 -59.34708,22.6443 -81.98565,0 L 249.33694,331.75677 140.52719,440.56652 c -22.63847,22.63855 -59.347105,22.63855 -81.985584,0 z"
+        android:fillColor="#EAEAEA" />
+
+</vector>

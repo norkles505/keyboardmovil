@@ -1,11 +1,13 @@
 ﻿using System.Drawing;
 using System.Drawing.Imaging;
+using System.Management;
 using System.Net;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
+using QRCoder;
 
 namespace windows_agent;
 
@@ -13,16 +15,50 @@ internal class Program
 {
     private static string _pin = "";
 
+    // Referencia a la ventana del QR para poder cerrarla automaticamente
+    // apenas un cliente se autentica (ver CerrarVentanaQrSiEstaAbierta).
+    // La asigna el hilo STA que crea la ventana (MostrarQrConexion) y la
+    // usa el hilo que atiende al cliente WebSocket (HandleClientAsync).
+    private static Form? _formQr;
+
     private static async Task Main()
     {
         _pin = new Random().Next(0, 10000).ToString("D4");
+        var ipLocal = GetLocalIPv4();
+        const string puerto = "8765";
 
         Console.WriteLine("=== Teclado Movil - Agente de Windows ===");
         Console.WriteLine();
-        Console.WriteLine($"IP local: {GetLocalIPv4()}");
-        Console.WriteLine($"Puerto:   8765");
+        Console.WriteLine($"IP local: {ipLocal}");
+        Console.WriteLine($"Puerto:   {puerto}");
         Console.WriteLine($"PIN:      {_pin}");
         Console.WriteLine();
+
+        // En vez de tipear IP+puerto+PIN a mano en el celular, se puede
+        // escanear este QR desde el boton "Escanear QR" de la pantalla de
+        // conexion de la app: trae los 3 datos juntos y conecta solo.
+        //
+        // Se muestra en una VENTANA con una imagen real, no como texto
+        // ASCII en la consola: el QR de consola quedaba poco nitido (la
+        // fuente de la terminal no es perfectamente cuadrada y el contraste
+        // es bajo), lo que hacia que la camara del celular no lo detectara.
+        // Una imagen real, en blanco y negro solido y a buen tamanio, es
+        // mucho mas confiable de escanear.
+        if (ipLocal.StartsWith("No encontrada"))
+        {
+            Console.WriteLine("No se pudo generar el QR: no se encontro una IP local valida.");
+        }
+        else
+        {
+            Console.WriteLine("Se abrio una ventana con el QR: escanealo desde la app (boton 'Escanear QR').");
+            Console.WriteLine("(La ventana se cierra sola apenas el celular se conecta; tambien la podes cerrar vos a mano.)");
+            Console.WriteLine();
+            var hiloVentanaQr = new Thread(() => MostrarQrConexion(ipLocal, puerto, _pin));
+            hiloVentanaQr.SetApartmentState(ApartmentState.STA);
+            hiloVentanaQr.IsBackground = true;
+            hiloVentanaQr.Start();
+        }
+
         Console.WriteLine("Esperando conexion del celular...");
         Console.WriteLine("(Ctrl+C para salir)");
         Console.WriteLine();
@@ -57,6 +93,97 @@ internal class Program
         }
     }
 
+    /// <summary>
+    /// Genera un QR con el formato "tecladomovil://IP:PUERTO/PIN" y lo
+    /// muestra en una VENTANA como imagen real (bitmap en blanco y negro
+    /// solido), para que la camara del celular lo pueda leer bien. Corre en
+    /// su propio hilo STA (requisito de WinForms) y bloquea ese hilo con
+    /// Application.Run hasta que el usuario cierre la ventana (o hasta que
+    /// se cierre sola al autenticarse un cliente); el agente en si sigue
+    /// corriendo normalmente en el hilo principal mientras tanto.
+    /// </summary>
+    private static void MostrarQrConexion(string ip, string puerto, string pin)
+    {
+        var contenido = $"tecladomovil://{ip}:{puerto}/{pin}";
+        using var generador = new QRCodeGenerator();
+        using var datosQr = generador.CreateQrCode(contenido, QRCodeGenerator.ECCLevel.M);
+        using var qrGrafico = new QRCode(datosQr);
+        // pixelsPerModule alto (16) para que el QR se vea grande y nitido:
+        // cuanto mas grande cada "cuadrito" del QR, mas facil de enfocar y
+        // decodificar para la camara del celular.
+        using var bitmap = qrGrafico.GetGraphic(16, Color.Black, Color.White, true);
+
+        using var form = new Form
+        {
+            Text = "Teclado Movil - Escanea este QR",
+            StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ClientSize = new Size(bitmap.Width + 40, bitmap.Height + 80),
+            BackColor = Color.White
+        };
+
+        var pictureBox = new PictureBox
+        {
+            Image = bitmap,
+            SizeMode = PictureBoxSizeMode.CenterImage,
+            Dock = DockStyle.Top,
+            Height = bitmap.Height + 20
+        };
+        form.Controls.Add(pictureBox);
+
+        var etiqueta = new Label
+        {
+            Text = $"IP: {ip}   Puerto: {puerto}   PIN: {pin}",
+            Dock = DockStyle.Bottom,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Height = 40
+        };
+        form.Controls.Add(etiqueta);
+
+        // Al cerrarse (sola o a mano), se limpia la referencia para que
+        // CerrarVentanaQrSiEstaAbierta() no intente usar una ventana ya
+        // destruida si se llama de nuevo mas tarde.
+        form.FormClosed += (_, _) => _formQr = null;
+
+        _formQr = form;
+        Application.Run(form);
+    }
+
+    /// <summary>
+    /// Cierra la ventana del QR si todavia esta abierta. Se llama apenas un
+    /// cliente termina de autenticarse (ver HandleClientAsync), que es la
+    /// señal de que ya escaneo el QR y conecto con exito: a partir de ahi la
+    /// ventana ya cumplio su proposito y solo estorba en pantalla.
+    ///
+    /// La ventana vive en su propio hilo STA (ver MostrarQrConexion), asi
+    /// que no se puede tocar directo desde este hilo: hay que usar
+    /// Invoke/BeginInvoke para que el cierre se ejecute en el hilo dueño de
+    /// la ventana, como exige WinForms.
+    /// </summary>
+    private static void CerrarVentanaQrSiEstaAbierta()
+    {
+        var form = _formQr;
+        if (form is null || form.IsDisposed) return;
+
+        try
+        {
+            if (form.InvokeRequired)
+                form.BeginInvoke(new Action(form.Close));
+            else
+                form.Close();
+        }
+        catch (ObjectDisposedException)
+        {
+            // La ventana se cerro (por el usuario) justo en el medio: no pasa nada.
+        }
+        catch (InvalidOperationException)
+        {
+            // El handle de la ventana ya no es valido (se estaba cerrando): no pasa nada.
+        }
+    }
+
     private static async Task HandleClientAsync(HttpListenerContext context)
     {
         WebSocket socket;
@@ -84,15 +211,39 @@ internal class Program
         {
             while (socket.State == WebSocketState.Open)
             {
-                var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-
-                if (result.MessageType == WebSocketMessageType.Close)
+                // Se acumulan los fragmentos hasta juntar el mensaje COMPLETO
+                // (result.EndOfMessage == true). Con un solo ReceiveAsync y
+                // el buffer fijo de 8192 bytes de antes, un mensaje mas
+                // grande que eso (como una captura de pantalla del celular)
+                // se cortaba a la mitad; el JSON de los mensajes de control
+                // siempre entraba en un solo pedazo, asi que antes no se notaba.
+                using var mensajeCompleto = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
                 {
-                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
-                    break;
+                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+                        break;
+                    }
+
+                    mensajeCompleto.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+
+                if (result.MessageType == WebSocketMessageType.Close) break;
+
+                // Mensaje BINARIO desde el celular: es una captura de
+                // pantalla del celular (PNG), lo unico que el celular manda
+                // en binario. Se copia directo al portapapeles de Windows.
+                if (result.MessageType == WebSocketMessageType.Binary)
+                {
+                    if (authenticated) CopiarCapturaMovilAlPortapapeles(mensajeCompleto.ToArray());
+                    continue;
                 }
 
-                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                var json = Encoding.UTF8.GetString(mensajeCompleto.ToArray());
                 Msg? msg;
                 try
                 {
@@ -111,6 +262,9 @@ internal class Program
                     {
                         authenticated = true;
                         Console.WriteLine("[+] Cliente autenticado.");
+                        // El celular ya escaneo el QR y conecto con exito:
+                        // la ventana del QR ya cumplio su proposito.
+                        CerrarVentanaQrSiEstaAbierta();
                         await SendAsync(socket, "{\"type\":\"auth_ok\"}");
                     }
                     else
@@ -159,6 +313,14 @@ internal class Program
                         screenCts?.Cancel();
                         screenCts = null;
                         Console.WriteLine("[-] Se corto la transmision de pantalla.");
+                        break;
+
+                    case "brightness_down":
+                        BrightnessController.Bajar();
+                        break;
+
+                    case "brightness_up":
+                        BrightnessController.Subir();
                         break;
                 }
             }
@@ -280,6 +442,36 @@ internal class Program
         }
     }
 
+    /// <summary>
+    /// Recibe el PNG con la captura de pantalla del CELULAR y lo copia al
+    /// portapapeles de Windows (Ctrl+V en cualquier app lo pega como
+    /// imagen). Clipboard.SetImage necesita el hilo en modo STA
+    /// (Single-Threaded Apartment), que es un requisito del portapapeles de
+    /// Windows en si (nada que ver con async/await); como el hilo que llega
+    /// hasta aca no es STA, se hace la llamada en un hilo nuevo dedicado,
+    /// creado especialmente en ese modo, y se espera (Join) a que termine.
+    /// </summary>
+    private static void CopiarCapturaMovilAlPortapapeles(byte[] pngBytes)
+    {
+        var hilo = new Thread(() =>
+        {
+            try
+            {
+                using var ms = new MemoryStream(pngBytes);
+                using var bitmap = new Bitmap(ms);
+                Clipboard.SetImage(bitmap);
+                Console.WriteLine("[+] Captura del celular copiada al portapapeles.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[!] No se pudo copiar la captura al portapapeles: {ex.Message}");
+            }
+        });
+        hilo.SetApartmentState(ApartmentState.STA);
+        hilo.Start();
+        hilo.Join();
+    }
+
     private static async Task SendAsync(WebSocket socket, string json)
     {
         var bytes = Encoding.UTF8.GetBytes(json);
@@ -288,11 +480,23 @@ internal class Program
 
     private static string GetLocalIPv4()
     {
-        foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
-            if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+        // Se prioriza WiFi y Ethernet reales, y se descartan interfaces
+        // VIRTUALES (VirtualBox Host-Only, Hyper-V, VPN, VMware, etc.).
+        // Antes se tomaba la primera interfaz "Up" que apareciera, y en PCs
+        // con VirtualBox/Hyper-V instalado eso agarraba el adaptador
+        // virtual (tipico rango 192.168.56.x de VirtualBox) en vez del WiFi
+        // real, dejando al celular intentando conectar a una IP en una red
+        // totalmente distinta a la suya (por eso el timeout de conexion).
+        var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+            .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
+            .Where(ni => ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+            .Where(ni => !EsInterfazVirtual(ni.Description) && !EsInterfazVirtual(ni.Name))
+            .OrderBy(ni => ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211 ? 0
+                         : ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet ? 1
+                         : 2);
 
+        foreach (var ni in interfaces)
+        {
             foreach (var addr in ni.GetIPProperties().UnicastAddresses)
             {
                 if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
@@ -302,6 +506,23 @@ internal class Program
             }
         }
         return "No encontrada (revisa que estes conectado a WiFi)";
+    }
+
+    /// <summary>
+    /// Detecta adaptadores de red VIRTUALES por palabras clave conocidas en
+    /// su nombre/descripcion (VirtualBox, Hyper-V, VMware, VPN...). Estos
+    /// adaptadores estan "Up" igual que el WiFi real, pero no sirven para
+    /// que el celular se conecte porque viven en una subred aislada de la PC.
+    /// </summary>
+    private static bool EsInterfazVirtual(string texto)
+    {
+        var t = texto.ToLowerInvariant();
+        string[] palabrasClave =
+        {
+            "virtualbox", "vbox", "hyper-v", "hyperv", "vmware",
+            "virtual", "vpn", "loopback", "tap-", "tun", "wsl"
+        };
+        return palabrasClave.Any(t.Contains);
     }
 }
 
@@ -563,6 +784,40 @@ internal static class KeySender
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_UNICODE = 0x0004;
 
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_SCANCODE = 0x0008;
+
+    // MapVirtualKey con MAPVK_VK_TO_VSC (0) convierte un virtual-key a su
+    // scan code segun la distribucion de teclado activa. Programas como
+    // Blender (que leen el teclado a bajo nivel) identifican las teclas,
+    // sobre todo Shift/Ctrl/Alt, por el scan code: si llega en 0 los ignoran.
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    // Teclas multimedia: no tienen un scan code de teclado normal, asi que
+    // se siguen mandando solo por virtual-key como antes.
+    private static readonly HashSet<ushort> TeclasMultimedia = new()
+    {
+        0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB3
+    };
+
+    // Virtual-key codes que Windows espera recibir marcados como "extended
+    // key" (flag KEYEVENTF_EXTENDEDKEY) en SendInput. Sin este flag, Windows
+    // puede interpretar la tecla de forma ambigua (como si viniera del
+    // bloque numerico en vez del bloque de navegacion), y algunas apps
+    // -sobre todo editores de texto que dependen de esto para gestos como
+    // Shift+Flecha para seleccionar texto- terminan ignorando el combo o
+    // comportandose distinto a lo esperado. Son las mismas teclas que en un
+    // teclado fisico real viven "duplicadas" fuera del bloque numerico:
+    // flechas, Home/End, Insert/Delete, Page Up/Down.
+    private static readonly HashSet<ushort> ExtendedKeys = new()
+    {
+        0x26, 0x28, 0x25, 0x27, // arriba, abajo, izquierda, derecha
+        0x24, 0x23,             // home, end
+        0x21, 0x22,             // pageup, pagedown
+        0x2D, 0x2E              // insert, delete
+    };
+
     private static readonly Dictionary<string, ushort> KeyMap = BuildKeyMap();
 
     private static Dictionary<string, ushort> BuildKeyMap()
@@ -580,9 +835,9 @@ internal static class KeySender
         map["backspace"] = 0x08;
         map["tab"] = 0x09;
         map["escape"] = 0x1B;
-        map["shift"] = 0x10;
-        map["ctrl"] = 0x11;
-        map["alt"] = 0x12;
+        map["shift"] = 0xA0; // VK_LSHIFT
+        map["ctrl"] = 0xA2;  // VK_LCONTROL
+        map["alt"] = 0xA4;   // VK_LMENU
         map["delete"] = 0x2E;
         map["arrowup"] = 0x26;
         map["arrowdown"] = 0x28;
@@ -597,6 +852,20 @@ internal static class KeySender
         map["pageup"] = 0x21;
         map["pagedown"] = 0x22;
         map["insert"] = 0x2D;
+
+        // Multimedia: volumen (subir/bajar/silenciar) y control de
+        // reproduccion (anterior/siguiente/play-pausa), con sus virtual-key
+        // codes dedicados de Windows. A diferencia del brillo (que depende
+        // de WMI y no siempre funciona en monitores externos), estas son
+        // teclas normales via SendInput: no dependen del driver del
+        // monitor/reproductor, funcionan en cualquier PC con cualquier app
+        // que escuche estas teclas (Spotify, YouTube, reproductor nativo, etc).
+        map["volumemute"] = 0xAD;
+        map["volumedown"] = 0xAE;
+        map["volumeup"] = 0xAF;
+        map["mediaprevioustrack"] = 0xB1;
+        map["medianexttrack"] = 0xB0;
+        map["mediaplaypause"] = 0xB3;
 
         for (int i = 1; i <= 12; i++)
             map[$"f{i}"] = (ushort)(0x70 + (i - 1));
@@ -637,9 +906,9 @@ internal static class KeySender
     {
         var teclas = combo.Split('+');
         foreach (var t in teclas)
-            SendKey(t, true);
+            { SendKey(t, true); Thread.Sleep(15); }
         for (int i = teclas.Length - 1; i >= 0; i--)
-            SendKey(teclas[i], false);
+            { SendKey(teclas[i], false); Thread.Sleep(15); }
     }
 
     private static void EnviarPorVirtualKey(ushort vk, bool isDown)
@@ -652,14 +921,26 @@ internal static class KeySender
                 ki = new Win32Input.KEYBDINPUT
                 {
                     wVk = vk,
-                    wScan = 0,
-                    dwFlags = isDown ? 0 : KEYEVENTF_KEYUP,
+                    wScan = (ushort)MapVirtualKey(vk, 0),
+                    dwFlags = ArmarFlagsVirtualKey(vk, isDown),
                     time = 0,
                     dwExtraInfo = IntPtr.Zero
                 }
             }
         };
         Win32Input.Enviar(input, vk.ToString());
+    }
+
+    private static uint ArmarFlagsVirtualKey(ushort vk, bool isDown)
+    {
+        var flags = isDown ? 0u : KEYEVENTF_KEYUP;
+        if (ExtendedKeys.Contains(vk))
+            flags |= KEYEVENTF_EXTENDEDKEY;
+        // Las teclas normales (letras, modificadores, flechas, etc.) se
+        // mandan con scan code, como un teclado fisico. Las multimedia no.
+        if (!TeclasMultimedia.Contains(vk) && MapVirtualKey(vk, 0) != 0)
+            flags |= KEYEVENTF_SCANCODE;
+        return flags;
     }
 
     private static void EnviarPorUnicode(char c, bool isDown)
@@ -690,6 +971,8 @@ internal static class MouseSender
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
 
     public static void Mover(int dx, int dy)
@@ -715,7 +998,9 @@ internal static class MouseSender
 
     public static void Click(string boton, bool isDown)
     {
-        uint flag = boton == "right"
+        uint flag = boton == "middle"
+            ? (isDown ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP)
+            : boton == "right"
             ? (isDown ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP)
             : (isDown ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
 
@@ -763,5 +1048,61 @@ internal static class MouseSender
             }
         };
         Win32Input.Enviar(input, "scroll");
+    }
+}
+
+/// <summary>
+/// Ajusta el brillo de la pantalla via WMI (namespace root\WMI, clases
+/// WmiMonitorBrightness / WmiMonitorBrightnessMethods). Esto es lo mismo que
+/// usa el control deslizante de brillo de Windows, asi que funciona bien en
+/// laptops. OJO: muchos monitores externos de PC de escritorio NO exponen
+/// brillo por WMI (dependen del driver/firmware del monitor), en ese caso
+/// esto no va a tener efecto y quedaria pendiente resolverlo por DDC/CI,
+/// que es mas complejo (requiere hablarle al monitor por el mismo cable de
+/// video en vez de a traves de Windows).
+/// </summary>
+internal static class BrightnessController
+{
+    private const int PasoPorDefecto = 10;
+
+    public static void Subir(int paso = PasoPorDefecto) => Ajustar(paso);
+    public static void Bajar(int paso = PasoPorDefecto) => Ajustar(-paso);
+
+    private static void Ajustar(int delta)
+    {
+        try
+        {
+            byte actual = LeerBrilloActual();
+            var nuevo = (byte)Math.Clamp(actual + delta, 0, 100);
+            AplicarBrillo(nuevo);
+            Console.WriteLine($"[+] Brillo ajustado a {nuevo}%.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[!] No se pudo ajustar el brillo (el monitor puede no soportarlo via WMI): {ex.Message}");
+        }
+    }
+
+    private static byte LeerBrilloActual()
+    {
+        using var buscador = new ManagementObjectSearcher("root\\WMI", "SELECT * FROM WmiMonitorBrightness");
+        using var coleccion = buscador.Get();
+        foreach (ManagementObject monitor in coleccion)
+        {
+            return (byte)monitor["CurrentBrightness"];
+        }
+        return 50; // no se encontro ningun monitor compatible: valor neutro por defecto
+    }
+
+    private static void AplicarBrillo(byte nuevo)
+    {
+        using var buscadorMetodos = new ManagementObjectSearcher("root\\WMI", "SELECT * FROM WmiMonitorBrightnessMethods");
+        using var coleccionMetodos = buscadorMetodos.Get();
+        foreach (ManagementObject metodo in coleccionMetodos)
+        {
+            // El primer parametro (Timeout) va en 1 segundo; el segundo es
+            // el nuevo nivel de brillo (0-100).
+            metodo.InvokeMethod("WmiSetBrightness", new object[] { 1, nuevo });
+        }
     }
 }

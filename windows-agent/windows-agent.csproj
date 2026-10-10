@@ -11,4 +11,14 @@
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Necesario para BrightnessController: acceso a WMI (root\WMI,
+         WmiMonitorBrightness/WmiMonitorBrightnessMethods) para leer y
+         ajustar el brillo de la pantalla. -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <!-- Necesario para generar el QR de conexion (IP+puerto+PIN) que se
+         muestra en la consola al arrancar el agente. -->
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+  </ItemGroup>
+
 </Project>

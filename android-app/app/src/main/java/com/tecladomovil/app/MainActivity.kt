@@ -7,11 +7,17 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.StateListDrawable
+import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -22,12 +28,17 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.GridLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -50,6 +61,7 @@ class MainActivity : AppCompatActivity() {
         const val ERROR = "#EF5350"
         const val TOUCHPAD_AREA = "#2A2A2A"
         const val SCROLLBAR = "#333333"
+        const val PRESION_BOTON = "#FF9800"
     }
 
 
@@ -84,12 +96,49 @@ class MainActivity : AppCompatActivity() {
     private lateinit var panelTecladoPc: LinearLayout
     private lateinit var botonPresion: Button
 
+    // Boton "Middle" (click de la rueda del mouse), arriba del touchpad.
+    // Funciona igual que "Presion": un toque deja la rueda apretada
+    // (middle-down) y otro toque la suelta (middle-up).
+    private lateinit var botonMiddle: Button
+    private var middleSostenido = false
+
     // True mientras el boton "Presion" esta activo: el click izquierdo del
     // mouse quedo sostenido (left-down mandado, left-up todavia no) para que
     // el usuario pueda arrastrar con el touchpad y seleccionar cosas sin
     // tener que mantener el dedo quieto un instante como en el modo
     // long-press del touchpad.
     private var presionSostenida = false
+
+    // True mientras el switch "Combinaciones" (pestania Teclas PC) esta
+    // activado. Cambia el comportamiento de los botones Ctrl/Alt/Shift/Win
+    // de la grilla: en vez de tocar = down+up inmediato, tocar los deja
+    // SOSTENIDOS (solo se manda el down) hasta volver a tocarlos, para poder
+    // combinarlos con una o varias teclas siguientes de la grilla (ej.
+    // Ctrl+Z, o Ctrl+Shift+flecha manteniendo dos modificadores a la vez).
+    // Ademas, mientras esta activo, las 4 filas de arriba (F1-F4) de la
+    // grilla cambian de iconos a letras A-Z (ver actualizarModoTecladoPc),
+    // para poder combinar los modificadores sostenidos con una letra.
+    private var combinacionesActivas = false
+
+    // Nombres (en minuscula, mismo formato que usa enviarTecla) de los
+    // modificadores actualmente sostenidos gracias a "Combinaciones".
+    private val modificadoresPresionados = mutableSetOf<String>()
+
+    // Referencia a los botones modificadores de la grilla de Teclas PC
+    // (Ctrl, Alt, Shift, Win, Tab), para poder resaltarlos visualmente
+    // mientras estan sostenidos y devolverlos a su color normal al
+    // soltarlos o al desactivar el switch.
+    private val botonesModificadores = mutableMapOf<String, View>()
+
+    // Referencia a la grilla de Teclas PC y a los dos juegos de celdas que
+    // se intercambian en ella cuando se activa "Combinaciones": las 4 filas
+    // de arriba (F1-F4) alternan entre "modo iconos" (deshacer, brillo,
+    // copiar/pegar, multimedia, etc., el modo normal) y "modo letras"
+    // (A-Z). F5 y F6 (modificadores, flechas, enter, backspace) quedan
+    // siempre fijas, no forman parte de ninguno de los dos juegos.
+    private lateinit var gridTecladoPc: GridLayout
+    private val celdasModoIconos = mutableListOf<View>()
+    private val celdasModoLetras = mutableListOf<View>()
 
     private var textoPrevio = ""
 
@@ -101,6 +150,76 @@ class MainActivity : AppCompatActivity() {
     // --- Conexion con el servicio en primer plano ---
     private var servicio: ConexionService? = null
     private var servicioLigado = false
+
+    // --- Captura de pantalla del celular (boton de F3,C7) ---
+    private lateinit var mediaProjectionManager: MediaProjectionManager
+
+    // Lanza el dialogo del sistema que pide permiso para capturar la
+    // pantalla ("Empezar a compartir/grabar pantalla"). El resultado
+    // (resultCode + Intent data) es lo que MediaProjectionManager necesita
+    // para poder obtener la proyeccion. En vez de capturar de una, se lo
+    // pasamos al servicio para que muestre el BOTON FLOTANTE: asi la
+    // captura real recien se dispara cuando el usuario toque ese boton,
+    // pudiendo antes navegar a lo que quiera capturar (la app de Teclado
+    // Movil se manda sola a segundo plano con moveTaskToBack).
+    private val lanzadorCapturaPantallaMovil = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { resultado ->
+        if (resultado.resultCode == RESULT_OK && resultado.data != null) {
+            servicio?.mostrarBotonFlotanteCaptura(resultado.resultCode, resultado.data!!)
+            Toast.makeText(
+                this,
+                "Anda a lo que queres capturar y toca el boton flotante",
+                Toast.LENGTH_LONG
+            ).show()
+            moveTaskToBack(true)
+        } else {
+            Toast.makeText(this, "Permiso de captura de pantalla denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Lanza la pantalla de Ajustes donde el usuario concede "Mostrar sobre
+    // otras apps" (SYSTEM_ALERT_WINDOW), necesario para el boton flotante de
+    // captura. No hay forma de pedir este permiso con un dialogo directo
+    // (a diferencia de POST_NOTIFICATIONS): Android obliga a pasar por
+    // Ajustes. Al volver de esa pantalla, se chequea si de verdad quedo
+    // concedido (el resultCode de esta Activity no es confiable para saberlo).
+    private val lanzadorPermisoSuperposicion = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (Settings.canDrawOverlays(this)) {
+            lanzadorCapturaPantallaMovil.launch(mediaProjectionManager.createScreenCaptureIntent())
+        } else {
+            Toast.makeText(
+                this,
+                "Sin ese permiso no se puede mostrar el boton flotante de captura",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    // Pide el permiso de CAMARA (necesario para escanear el QR) justo antes
+    // de lanzar el escaneo, en vez de pedirlo en onCreate: asi solo se le
+    // molesta al usuario si realmente va a usar esa funcion.
+    private val lanzadorPermisoCamara = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedido ->
+        if (concedido) {
+            lanzarEscaneoQr()
+        } else {
+            Toast.makeText(this, "Sin permiso de camara no se puede escanear el QR", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Lanza la actividad de escaneo (ZXing embedded) y recibe el contenido
+    // leido del QR, con el formato "tecladomovil://IP:PUERTO/PIN" que
+    // imprime el agente de Windows en la consola al arrancar.
+    private val lanzadorEscaneoQr = registerForActivityResult(ScanContract()) { resultado ->
+        val contenido = resultado.contents
+        if (contenido != null) {
+            procesarQrEscaneado(contenido)
+        }
+    }
 
     private val conexionServiceListener = object : ConexionService.ConexionListener {
         override fun onConectando() {
@@ -177,10 +296,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("teclado_movil_prefs", Context.MODE_PRIVATE)
+        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
         }
+        solicitarExclusionDeOptimizacionBateria()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -239,6 +360,32 @@ class MainActivity : AppCompatActivity() {
         // saca la app de la lista de recientes (ver ConexionService.onTaskRemoved).
     }
 
+    /**
+     * En muchos celulares (sobre todo Xiaomi, Huawei, Oppo, Realme y otros
+     * fabricantes con capas de ahorro de bateria propias) el sistema mata
+     * igual las apps en segundo plano por mas foreground service que
+     * tengan, salvo que el usuario la excluya manualmente de la
+     * optimizacion de bateria. En vez de mandar al usuario a buscar ese
+     * ajuste a mano en Configuracion, se lo pedimos directo con el dialogo
+     * nativo de Android (solo se muestra si todavia no esta concedido).
+     */
+    private fun solicitarExclusionDeOptimizacionBateria() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            // Algunos fabricantes bloquean/reemplazan este intent especifico
+            // por su propio dialogo (o directamente no lo soportan). Si
+            // falla, no pasa nada grave: el usuario puede hacerlo a mano
+            // desde Ajustes > Bateria > Sin restricciones.
+        }
+    }
+
     // ==================== ESTILO (modo oscuro consistente) ====================
 
     /**
@@ -264,6 +411,13 @@ class MainActivity : AppCompatActivity() {
     private fun aplicarEstiloBoton(boton: Button) {
         boton.setTextColor(Color.parseColor(Colores.TEXTO_PRIMARIO))
         boton.setBackgroundColor(Color.parseColor(Colores.BOTON))
+    }
+
+    private fun crearFondoConPresion(colorNormal: String): StateListDrawable {
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), ColorDrawable(Color.parseColor(Colores.PRESION_BOTON)))
+            addState(intArrayOf(), ColorDrawable(Color.parseColor(colorNormal)))
+        }
     }
 
     // ==================== PANTALLA DE CONEXION ====================
@@ -298,12 +452,33 @@ class MainActivity : AppCompatActivity() {
             aplicarEstiloCampo(pinInput)
             addView(pinInput)
 
+            // Fila con "Conectar" y "Escanear QR" lado a lado: el QR evita
+            // tener que tipear IP/puerto/PIN a mano, se completan solos y
+            // se conecta directo apenas se lee un codigo valido.
+            val filaBotones = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, 0)
+            }
+
             val connectButton = Button(this@MainActivity).apply {
                 text = "Conectar"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { conectar() }
             }
             aplicarEstiloBoton(connectButton)
-            addView(connectButton)
+            filaBotones.addView(connectButton)
+
+            val scanButton = Button(this@MainActivity).apply {
+                text = "Escanear QR"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                }
+                setOnClickListener { iniciarEscaneoQr() }
+            }
+            aplicarEstiloBoton(scanButton)
+            filaBotones.addView(scanButton)
+
+            addView(filaBotones)
 
             statusText = TextView(this@MainActivity).apply {
                 text = "Sin conectar"
@@ -334,6 +509,58 @@ class MainActivity : AppCompatActivity() {
         servicio?.conectar(ip, puerto, pin)
     }
 
+    /**
+     * Punto de entrada del boton "Escanear QR": pide el permiso de camara
+     * si todavia no esta concedido y recien ahi lanza el escaneo (si ya
+     * esta concedido, salta directo a lanzarEscaneoQr).
+     */
+    private fun iniciarEscaneoQr() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            lanzarEscaneoQr()
+        } else {
+            lanzadorPermisoCamara.launch(android.Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun lanzarEscaneoQr() {
+        val opciones = ScanOptions().apply {
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            setPrompt("Apunta al QR que muestra el agente de Windows")
+            setBeepEnabled(false)
+            setOrientationLocked(true)
+        }
+        lanzadorEscaneoQr.launch(opciones)
+    }
+
+    /**
+     * Interpreta el contenido leido del QR, con el formato
+     * "tecladomovil://IP:PUERTO/PIN" que imprime el agente de Windows.
+     * Si el formato es valido, completa los 3 campos y conecta directo
+     * (evita el paso extra de tocar "Conectar" despues de escanear).
+     */
+    private fun procesarQrEscaneado(contenido: String) {
+        try {
+            val uri = Uri.parse(contenido)
+            val ip = uri.host
+            val puerto = if (uri.port != -1) uri.port.toString() else null
+            val pin = uri.path?.removePrefix("/")
+
+            if (uri.scheme != "tecladomovil" || ip.isNullOrEmpty() || puerto.isNullOrEmpty() || pin.isNullOrEmpty()) {
+                Toast.makeText(this, "Codigo QR no valido", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            ipInput.setText(ip)
+            puertoInput.setText(puerto)
+            pinInput.setText(pin)
+            conectar()
+        } catch (_: Exception) {
+            Toast.makeText(this, "No se pudo leer el codigo QR", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun mostrarPantallaPrincipal() {
         panelConexion.visibility = View.GONE
         panelPrincipal.visibility = View.VISIBLE
@@ -355,6 +582,18 @@ class MainActivity : AppCompatActivity() {
         if (presionSostenida) {
             presionSostenida = false
             actualizarBotonPresion()
+        }
+        if (middleSostenido) {
+            middleSostenido = false
+            actualizarBotonMiddle()
+        }
+        // Al desconectar, si habia modificadores sostenidos (Ctrl/Alt/Shift/
+        // Win) por "Combinaciones", se limpia el estado y se les devuelve el
+        // color normal: no tiene sentido mandar el "up" porque ya no hay
+        // conexion, pero si dejarlos marcados como sostenidos visualmente.
+        if (modificadoresPresionados.isNotEmpty()) {
+            modificadoresPresionados.clear()
+            botonesModificadores.values.forEach { it.background = crearFondoConPresion(Colores.BOTON) }
         }
     }
 
@@ -426,6 +665,9 @@ class MainActivity : AppCompatActivity() {
         panelTecladoPc = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            // Un poco de aire arriba, para que la grilla no quede pegada
+            // justo debajo de la barra de pestanias.
+            setPadding(0, dp(50), 0, 0)
         }
         panelTecladoPc.addView(buildPanelTecladoPc())
         contenedor.addView(panelTecladoPc)
@@ -496,9 +738,52 @@ class MainActivity : AppCompatActivity() {
         servicio?.enviarJson(msg.toString())
     }
 
+    /**
+     * Punto de entrada de la tecla "Captura pantalla movil" (F3,C7). Antes
+     * disparaba la captura de una, lo que siempre terminaba capturando la
+     * propia app de Teclado Movil (porque en ese instante era lo unico que
+     * estaba en pantalla). Ahora el flujo es en dos pasos:
+     *
+     * 1) Se piden los permisos que hagan falta (superposicion + captura de
+     *    pantalla) y se muestra un BOTON FLOTANTE arriba de todo, mientras
+     *    la app se manda sola a segundo plano.
+     * 2) El usuario navega a lo que realmente quiere capturar y TOCA el
+     *    boton flotante: recien ahi se dispara la captura real (ver
+     *    ConexionService.mostrarBotonFlotanteCaptura).
+     */
+    private fun solicitarCapturaPantallaMovil() {
+        if (servicio?.connected != true) {
+            avisarSiDesconectado()
+            return
+        }
+
+        // El boton flotante necesita el permiso de "Mostrar sobre otras
+        // apps". A diferencia de otros permisos, Android no tiene un dialogo
+        // directo para esto: hay que mandar al usuario a una pantalla de
+        // Ajustes especifica y, al volver, chequear si de verdad lo concedio.
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(
+                this,
+                "Activa \"Mostrar sobre otras apps\" para Teclado Movil y volve",
+                Toast.LENGTH_LONG
+            ).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            lanzadorPermisoSuperposicion.launch(intent)
+            return
+        }
+
+        lanzadorCapturaPantallaMovil.launch(mediaProjectionManager.createScreenCaptureIntent())
+    }
+
     // ==================== TECLADO (envio de texto) ====================
 
-    private fun buildPanelTeclado(): EditText {
+    /**
+     * Arma el panel de "Teclado": el EditText donde se escribe.
+     */
+    private fun buildPanelTeclado(): LinearLayout {
         escrituraInput = EditText(this).apply {
             hint = "Escribi aca..."
             textSize = 18f
@@ -530,13 +815,38 @@ class MainActivity : AppCompatActivity() {
                         return
                     }
                     val nuevo = s?.toString() ?: ""
+
+                    // Algunos teclados (ej. Gboard en este campo multilinea)
+                    // no disparan el IME_ACTION_SEND al tocar Enter: en vez
+                    // de eso insertan un salto de linea real ("\n") como si
+                    // fuera texto normal. Antes ese "\n" se filtraba dentro
+                    // de procesarCambioTexto y ahi quedaba: no se mandaba el
+                    // Enter al agente de Windows ni se limpiaba el panel, asi
+                    // que el texto se quedaba pegado en pantalla. Aca
+                    // detectamos el salto ANTES de filtrarlo y lo tratamos
+                    // igual que el Enter del boton de accion: mandamos
+                    // primero el texto insertado antes del salto (si habia),
+                    // despues el Enter, y recien ahi limpiamos el panel.
+                    if (nuevo.contains("\n")) {
+                        procesarCambioTexto(textoPrevio, nuevo.replace("\n", ""))
+                        avisarSiDesconectado()
+                        enviarTecla("enter", true)
+                        enviarTecla("enter", false)
+                        limpiarPanelEscritura()
+                        return
+                    }
+
                     procesarCambioTexto(textoPrevio, nuevo)
                     textoPrevio = nuevo
                 }
             })
         }
         aplicarEstiloCampo(escrituraInput)
-        return escrituraInput
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(escrituraInput)
+        }
     }
 
     /**
@@ -602,8 +912,30 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             // Un poco de aire arriba antes de que arranque el touchpad, para
             // que no quede pegado justo debajo de la barra de pestanias.
-            setPadding(0, dp(92), 0, 0)
+            setPadding(0, dp(36), 0, 0)
         }
+
+        // Boton "Middle" (click de la rueda), arriba y centrado sobre la barra
+        // de scroll + touchpad. Funciona igual que "Presion": un toque deja la
+        // rueda apretada (middle-down, cambia a "Soltar" en verde) y otro
+        // toque la suelta (middle-up).
+        botonMiddle = Button(this).apply {
+            text = "Middle"
+            textSize = 16f
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(dp(110), dp(50)).apply {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setMargins(0, 0, 0, dp(6))
+            }
+            setOnClickListener {
+                avisarSiDesconectado()
+                middleSostenido = !middleSostenido
+                enviarClickMouse("middle", middleSostenido)
+                actualizarBotonMiddle()
+            }
+        }
+        aplicarEstiloBoton(botonMiddle)
+        contenedor.addView(botonMiddle)
 
         // Fila de arriba: la barra de scroll (izquierda) y el area del
         // touchpad (derecha, ocupa el resto del ancho).
@@ -846,14 +1178,136 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Refleja visualmente el estado del boton "Middle": texto y color
+     * distintos cuando el click de la rueda esta sostenido, igual que
+     * actualizarBotonPresion con el click izquierdo.
+     */
+    private fun actualizarBotonMiddle() {
+        if (middleSostenido) {
+            botonMiddle.text = "Soltar"
+            botonMiddle.setBackgroundColor(Color.parseColor(Colores.OK))
+            botonMiddle.setTextColor(Color.parseColor("#0A0A0A"))
+        } else {
+            botonMiddle.text = "Middle"
+            botonMiddle.setBackgroundColor(Color.parseColor(Colores.BOTON))
+            botonMiddle.setTextColor(Color.parseColor(Colores.TEXTO_PRIMARIO))
+        }
+    }
+
     // ==================== TECLAS PC ====================
     // Grilla de 6x7 casilleros (segun el boceto), con 2 celdas especiales
     // mas grandes (una ancha de 2 columnas, otra alta de 2 filas). Todos los
     // botones estan vacios por ahora: la tecla/accion de cada uno se agrega
     // despues, segun las indicaciones que se vayan dando celda por celda.
 
+    /**
+     * Maneja el toque de un boton modificador (Ctrl/Alt/Shift/Win/Tab) de la
+     * grilla de Teclas PC.
+     *
+     * Sin "Combinaciones" activado: comportamiento de siempre, toque simple
+     * = down+up inmediato (como cualquier otra tecla suelta).
+     *
+     * Con "Combinaciones" activado: el toque alterna entre sostener el
+     * modificador (se manda solo el down y queda resaltado en verde) y
+     * soltarlo (se manda el up y vuelve a su color normal). Mientras esta
+     * sostenido, se puede tocar cualquier otra tecla de la grilla (o mas de
+     * un modificador a la vez) para armar la combinacion, ya que el agente
+     * de Windows interpreta cada key down/up de forma independiente.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun configurarTecleoConRepeticion(view: View, accion: () -> Unit) {
+        val handler = Handler(Looper.getMainLooper())
+        val demoraInicialMs = 400L
+        val intervaloMs = 50L
+
+        val runnableRepetir = object : Runnable {
+            override fun run() {
+                avisarSiDesconectado()
+                accion()
+                handler.postDelayed(this, intervaloMs)
+            }
+        }
+
+        view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    avisarSiDesconectado()
+                    accion()
+                    handler.postDelayed(runnableRepetir, demoraInicialMs)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(runnableRepetir)
+                }
+            }
+            true
+        }
+    }
+
+    private fun manejarToqueModificador(key: String, view: View) {
+        if (!combinacionesActivas) {
+            enviarTecla(key, true)
+            enviarTecla(key, false)
+            return
+        }
+
+        if (modificadoresPresionados.contains(key)) {
+            enviarTecla(key, false)
+            modificadoresPresionados.remove(key)
+            view.background = crearFondoConPresion(Colores.BOTON)
+        } else {
+            enviarTecla(key, true)
+            modificadoresPresionados.add(key)
+            view.setBackgroundColor(Color.parseColor(Colores.OK))
+        }
+    }
+
+    /**
+     * Intercambia, dentro de la grilla de Teclas PC, las 4 filas de arriba
+     * (F1-F4) entre el modo "iconos" (deshacer, brillo, copiar/pegar,
+     * multimedia, etc.) y el modo "letras" (A-Z), segun el estado de
+     * combinacionesActivas. F5 y F6 (modificadores, flechas, enter,
+     * backspace) no se tocan: nunca forman parte de celdasModoIconos ni de
+     * celdasModoLetras, asi que quedan siempre visibles y en su lugar.
+     */
+    private fun actualizarModoTecladoPc() {
+        if (combinacionesActivas) {
+            celdasModoIconos.forEach { gridTecladoPc.removeView(it) }
+            celdasModoLetras.forEach { gridTecladoPc.addView(it) }
+        } else {
+            celdasModoLetras.forEach { gridTecladoPc.removeView(it) }
+            celdasModoIconos.forEach { gridTecladoPc.addView(it) }
+        }
+    }
+
     private fun buildPanelTecladoPc(): LinearLayout {
         val contenedor = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        // Switch "Combinaciones": activa el modo "modificador sostenido" en
+        // los botones Ctrl/Alt/Shift/Win de la grilla (ver
+        // manejarToqueModificador), y ademas cambia las 4 filas de arriba
+        // (F1-F4) de iconos a letras A-Z (ver actualizarModoTecladoPc), para
+        // poder combinar los modificadores sostenidos con una letra. Va
+        // arriba de la grilla, dentro del padding horizontal de este mismo
+        // panel (a diferencia de la grilla, que ocupa el ancho completo).
+        val switchCombinaciones = Switch(this).apply {
+            text = "Combinaciones"
+            setTextColor(Color.parseColor(Colores.TEXTO_PRIMARIO))
+            setPadding(dp(16), 0, 0, dp(12))
+            setOnCheckedChangeListener { _, activado ->
+                combinacionesActivas = activado
+                // Si se desactiva el switch con algun modificador todavia
+                // sostenido, se lo suelta (manda el "up" al agente) para que
+                // no quede una tecla "pegada" en la PC.
+                if (!activado && modificadoresPresionados.isNotEmpty()) {
+                    modificadoresPresionados.toList().forEach { key -> enviarTecla(key, false) }
+                    modificadoresPresionados.clear()
+                    botonesModificadores.values.forEach { it.background = crearFondoConPresion(Colores.BOTON) }
+                }
+                actualizarModoTecladoPc()
+            }
+        }
+        contenedor.addView(switchCombinaciones)
 
         // Grilla de 6 filas x 7 columnas (segun el boceto). Se usa GridLayout
         // (no filas sueltas de LinearLayout) porque la celda de abajo a la
@@ -877,10 +1331,11 @@ class MainActivity : AppCompatActivity() {
             columnCount = columnas
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
+        gridTecladoPc = grid
 
-        // Agrega un boton vacio (sin tecla asignada todavia: eso viene
-        // despues, seccion por seccion, segun indicaciones) en (fila,
-        // columna), pudiendo ocupar varias filas/columnas.
+        // Agrega un boton en (fila, columna), pudiendo ocupar varias
+        // filas/columnas, y devuelve la vista creada (para poder guardar
+        // una referencia, como se hace con los botones modificadores).
         //
         // OJO con las celdas que ocupan mas de 1 fila/columna (colSpan o
         // rowSpan > 1): como cada celda normal tiene margen dp(2) A CADA
@@ -892,40 +1347,354 @@ class MainActivity : AppCompatActivity() {
         // chica que el espacio real que deberia cubrir, y su borde no
         // coincide con las columnas/filas de al lado. Por eso se le suma
         // (span - 1) * margenPorCelda: el "hueco interno" que le faltaria.
-        fun agregarCelda(fila: Int, columna: Int, rowSpan: Int = 1, colSpan: Int = 1) {
-            val boton = Button(this).apply {
-                text = ""
-                isAllCaps = false
+        //
+        // Las celdas con icono usan ImageButton en vez de Button. Con un
+        // Button vacio de texto (text = "") y un compound drawable arriba,
+        // Android igual reserva el alto de una linea de texto "fantasma"
+        // debajo del icono (el hueco donde iria el texto), y ese bloque
+        // completo (icono + linea invisible) es lo que queda centrado, no
+        // el icono en si: el icono termina corrido hacia arriba dentro del
+        // boton. ImageButton no tiene ese problema porque no maneja texto
+        // en absoluto, asi que el drawable queda perfectamente centrado.
+        //
+        // añadirAlGrid controla si la celda se agrega al GridLayout apenas
+        // se crea (true, comportamiento de siempre) o si solo se arma y se
+        // devuelve sin agregar (false): esto ultimo se usa para las celdas
+        // del modo "letras", que no deben verse hasta que se active
+        // "Combinaciones" (ver actualizarModoTecladoPc).
+        fun agregarCelda(fila: Int, columna: Int, rowSpan: Int = 1, colSpan: Int = 1, texto: String = "", iconoResId: Int? = null, repetir: Boolean = false, accion: (() -> Unit)? = null, añadirAlGrid: Boolean = true): View {
+            val view: View = if (iconoResId != null) {
+                ImageButton(this).apply {
+                    setImageResource(iconoResId)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    // Un poco de aire alrededor del icono para que no quede
+                    // pegado a los bordes del boton (mismo efecto que tienen
+                    // los botones con texto gracias a su padding interno).
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    background = crearFondoConPresion(Colores.BOTON)
+                    minimumWidth = 0
+                    minimumHeight = 0
+                    stateListAnimator = null
+                    elevation = 0f
+                }
+            } else {
+                Button(this).apply {
+                    isAllCaps = false
+                    text = texto
+                    // Se saca todo el "relleno" que Android le pone por
+                    // defecto a un Button (padding interno, ancho/alto
+                    // minimo, sombra al tocar/enfocar), para que el tamanio
+                    // real siempre coincida con el que se calcula abajo
+                    // (anchoCelda / altoCelda), sin sorpresas del estilo del
+                    // sistema.
+                    setPadding(0, 0, 0, 0)
+                    minWidth = 0
+                    minHeight = 0
+                    stateListAnimator = null
+                    elevation = 0f
+                }.also { aplicarEstiloBoton(it); it.background = crearFondoConPresion(Colores.BOTON) }
             }
-            aplicarEstiloBoton(boton)
-            boton.layoutParams = GridLayout.LayoutParams(
-                GridLayout.spec(fila, rowSpan),
-                GridLayout.spec(columna, colSpan)
+            // GridLayout.CENTER (en vez de dejar el default, que es
+            // alineacion por BASELINE de texto) evita que una celda sin
+            // texto quede desplazada respecto a sus vecinas que si tienen
+            // texto.
+            view.layoutParams = GridLayout.LayoutParams(
+                GridLayout.spec(fila, rowSpan, GridLayout.CENTER),
+                GridLayout.spec(columna, colSpan, GridLayout.CENTER)
             ).apply {
                 width = anchoCelda * colSpan + (colSpan - 1) * margenPorCelda
                 height = altoCelda * rowSpan + (rowSpan - 1) * margenPorCelda
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
-            grid.addView(boton)
+            if (accion != null) {
+                view.setOnClickListener {
+                    avisarSiDesconectado()
+                    accion()
+                }
+            }
+            if (repetir && accion != null) {
+                configurarTecleoConRepeticion(view, accion)
+            }
+            if (añadirAlGrid) grid.addView(view)
+            return view
         }
 
         for (fila in 0 until filas) {
             for (columna in 0 until columnas) {
                 when {
                     // Celda ancha (2 columnas): fila 2 del boceto (indice 1),
-                    // columnas 6-7 (indices 5-6).
-                    fila == 1 && columna == 5 -> agregarCelda(fila, columna, colSpan = 2)
+                    // columnas 6-7 (indices 5-6). Backspace. Fija: no cambia
+                    // con el modo "Combinaciones" (el boceto de letras
+                    // tambien la deja en el mismo lugar).
+                    fila == 1 && columna == 5 -> agregarCelda(fila, columna, colSpan = 2, iconoResId = R.drawable.ic_backspace, repetir = true, accion = {
+                        enviarTecla("backspace", true)
+                        enviarTecla("backspace", false)
+                    })
                     fila == 1 && columna == 6 -> Unit // cubierta por la celda de arriba
 
                     // Celda alta (2 filas): columna 7 del boceto (indice 6),
-                    // filas 5-6 (indices 4-5).
-                    fila == 4 && columna == 6 -> agregarCelda(fila, columna, rowSpan = 2)
+                    // filas 5-6 (indices 4-5). Enter. Ademas de mandar la
+                    // tecla al agente, limpia el panel de "Teclado" (igual
+                    // que el Enter nativo del teclado del celular), para que
+                    // no quede el texto ya enviado dando vueltas ahi si el
+                    // usuario manda el Enter desde esta pestania.
+                    fila == 4 && columna == 6 -> agregarCelda(fila, columna, rowSpan = 2, iconoResId = R.drawable.ic_enter, accion = {
+                        enviarTecla("enter", true)
+                        enviarTecla("enter", false)
+                        limpiarPanelEscritura()
+                    })
                     fila == 5 && columna == 6 -> Unit // cubierta por la celda de arriba
 
-                    else -> agregarCelda(fila, columna)
+                    // F1,C7: cerrar ventana (Alt+F4). Icono SVG convertido a
+                    // vector drawable. Forma parte del modo "iconos": con
+                    // "Combinaciones" activado, esta celda se reemplaza por
+                    // la letra G (ver celdasModoLetras).
+                    fila == 0 && columna == 6 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_cerrar, añadirAlGrid = false, accion = { enviarCombo("alt+f4") }))
+
+                    // F1,C6: minimizar ventana (Alt+Espacio abre el menu de sistema, N minimiza). Se representa con "-".
+                    // (Trasladado desde F1,C5.)
+                    fila == 0 && columna == 5 -> celdasModoIconos.add(agregarCelda(fila, columna, texto = "-", añadirAlGrid = false, accion = {
+                        enviarCombo("alt+space")
+                        enviarTecla("n", true)
+                        enviarTecla("n", false)
+                    }))
+
+                    // F1,C5: cambiar entre ventanas (Win+Tab). Icono SVG convertido a vector drawable.
+                    // (Trasladado desde F1,C4.)
+                    fila == 0 && columna == 4 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_cambiar_ventana, añadirAlGrid = false, accion = { enviarCombo("win+tab") }))
+
+                    // F1,C4: mas brillo. Icono SVG convertido a vector drawable.
+                    fila == 0 && columna == 3 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_mas_brillo, añadirAlGrid = false, accion = {
+                        enviarJson(JSONObject().apply { put("type", "brightness_up") })
+                    }))
+
+                    // F1,C3: menos brillo. Icono SVG convertido a vector drawable.
+                    fila == 0 && columna == 2 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_menos_brillo, añadirAlGrid = false, accion = {
+                        enviarJson(JSONObject().apply { put("type", "brightness_down") })
+                    }))
+
+                    // F1,C1: deshacer (Ctrl+Z). Icono SVG convertido a vector drawable.
+                    fila == 0 && columna == 0 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_deshacer, añadirAlGrid = false, accion = { enviarCombo("ctrl+z") }))
+
+                    // F1,C2: rehacer (Ctrl+Y). Icono SVG convertido a vector drawable.
+                    fila == 0 && columna == 1 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_rehacer, añadirAlGrid = false, accion = { enviarCombo("ctrl+y") }))
+
+                    // F5,C5: flecha arriba.
+                    fila == 4 && columna == 4 -> agregarCelda(fila, columna, iconoResId = R.drawable.ic_arriba, repetir = true, accion = {
+                        enviarTecla("arrowup", true)
+                        enviarTecla("arrowup", false)
+                    })
+
+                    // F6,C5: flecha abajo.
+                    fila == 5 && columna == 4 -> agregarCelda(fila, columna, iconoResId = R.drawable.ic_abajo, repetir = true, accion = {
+                        enviarTecla("arrowdown", true)
+                        enviarTecla("arrowdown", false)
+                    })
+
+                    // F6,C3: tecla Alt. Con "Combinaciones" activado, se
+                    // sostiene/suelta en vez de tocar simple (ver
+                    // manejarToqueModificador).
+                    fila == 5 && columna == 2 -> {
+                        val view = agregarCelda(fila, columna, texto = "Alt")
+                        botonesModificadores["alt"] = view
+                        view.setOnClickListener {
+                            avisarSiDesconectado()
+                            manejarToqueModificador("alt", view)
+                        }
+                    }
+
+                    // F5,C2: tecla Tab. Al lado de Shift. Con "Combinaciones"
+                    // activado se comporta igual que Ctrl/Alt/Shift/Win: se
+                    // sostiene/suelta en vez de tocar simple (ver
+                    // manejarToqueModificador), para poder armar combos como
+                    // Alt+Tab (sostener Alt, tocar Tab, soltar Alt) o
+                    // Ctrl+Shift+Tab. Se guarda tambien en
+                    // botonesModificadores para que se le devuelva el color
+                    // normal al desconectar o al desactivar el switch, igual
+                    // que a los demas modificadores.
+                    fila == 4 && columna == 1 -> {
+                        val view = agregarCelda(fila, columna, texto = "Tab")
+                        botonesModificadores["tab"] = view
+                        view.setOnClickListener {
+                            avisarSiDesconectado()
+                            manejarToqueModificador("tab", view)
+                        }
+                    }
+
+                    // F6,C4: flecha izquierda.
+                    fila == 5 && columna == 3 -> agregarCelda(fila, columna, iconoResId = R.drawable.ic_izquierda, repetir = true, accion = {
+                        enviarTecla("arrowleft", true)
+                        enviarTecla("arrowleft", false)
+                    })
+
+                    // F6,C6: flecha derecha.
+                    fila == 5 && columna == 5 -> agregarCelda(fila, columna, iconoResId = R.drawable.ic_derecha, repetir = true, accion = {
+                        enviarTecla("arrowright", true)
+                        enviarTecla("arrowright", false)
+                    })
+
+                    // F6,C1: tecla Ctrl. Con "Combinaciones" activado, se
+                    // sostiene/suelta en vez de tocar simple (ver
+                    // manejarToqueModificador).
+                    fila == 5 && columna == 0 -> {
+                        val view = agregarCelda(fila, columna, texto = "Ctrl")
+                        botonesModificadores["ctrl"] = view
+                        view.setOnClickListener {
+                            avisarSiDesconectado()
+                            manejarToqueModificador("ctrl", view)
+                        }
+                    }
+
+                    // F5,C1: tecla Shift. Con "Combinaciones" activado, se
+                    // sostiene/suelta en vez de tocar simple (ver
+                    // manejarToqueModificador).
+                    fila == 4 && columna == 0 -> {
+                        val view = agregarCelda(fila, columna, texto = "Shift")
+                        botonesModificadores["shift"] = view
+                        view.setOnClickListener {
+                            avisarSiDesconectado()
+                            manejarToqueModificador("shift", view)
+                        }
+                    }
+
+                    // F6,C2: tecla Windows (Win). Con "Combinaciones"
+                    // activado, se sostiene/suelta en vez de tocar simple
+                    // (ver manejarToqueModificador).
+                    fila == 5 && columna == 1 -> {
+                        val view = agregarCelda(fila, columna, iconoResId = R.drawable.ic_win)
+                        botonesModificadores["win"] = view
+                        view.setOnClickListener {
+                            avisarSiDesconectado()
+                            manejarToqueModificador("win", view)
+                        }
+                    }
+
+                    // F2,C1: copiar (Ctrl+C).
+                    fila == 1 && columna == 0 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_copiar, añadirAlGrid = false, accion = { enviarCombo("ctrl+c") }))
+
+                    // F2,C2: pegar (Ctrl+V).
+                    fila == 1 && columna == 1 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_pegar, añadirAlGrid = false, accion = { enviarCombo("ctrl+v") }))
+
+                    // F2,C3: cortar (Ctrl+X).
+                    fila == 1 && columna == 2 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_cortar, añadirAlGrid = false, accion = { enviarCombo("ctrl+x") }))
+
+                    // F2,C4: portapapeles (Win+V).
+                    fila == 1 && columna == 3 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_portapapeles, añadirAlGrid = false, accion = { enviarCombo("win+v") }))
+
+                    // F2,C5: seleccionar todo (Ctrl+A).
+                    fila == 1 && columna == 4 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_seleccionar_todo, añadirAlGrid = false, accion = { enviarCombo("ctrl+a") }))
+
+                    // F3,C1: silenciar/activar volumen (mute).
+                    fila == 2 && columna == 0 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_mute, añadirAlGrid = false, accion = {
+                        enviarTecla("volumemute", true)
+                        enviarTecla("volumemute", false)
+                    }))
+
+                    // F3,C2: bajar volumen.
+                    fila == 2 && columna == 1 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_volumen_bajar, añadirAlGrid = false, accion = {
+                        enviarTecla("volumedown", true)
+                        enviarTecla("volumedown", false)
+                    }))
+
+                    // F3,C3: subir volumen.
+                    fila == 2 && columna == 2 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_volumen_subir, añadirAlGrid = false, accion = {
+                        enviarTecla("volumeup", true)
+                        enviarTecla("volumeup", false)
+                    }))
+
+                    // F3,C4: pista anterior.
+                    fila == 2 && columna == 3 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_anterior, añadirAlGrid = false, accion = {
+                        enviarTecla("mediaprevioustrack", true)
+                        enviarTecla("mediaprevioustrack", false)
+                    }))
+
+                    // F3,C5: reproducir/pausar.
+                    fila == 2 && columna == 4 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_reproducir_pausa, añadirAlGrid = false, accion = {
+                        enviarTecla("mediaplaypause", true)
+                        enviarTecla("mediaplaypause", false)
+                    }))
+
+                    // F3,C6: pista siguiente.
+                    fila == 2 && columna == 5 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_siguiente, añadirAlGrid = false, accion = {
+                        enviarTecla("medianexttrack", true)
+                        enviarTecla("medianexttrack", false)
+                    }))
+
+                    // F3,C7: captura la pantalla del CELULAR y la manda a la
+                    // PC (el agente de Windows la copia al portapapeles).
+                    // Muestra el boton flotante (ver solicitarCapturaPantallaMovil):
+                    // la captura real recien se dispara cuando el usuario
+                    // toque ESE boton, no al tocar esta tecla.
+                    fila == 2 && columna == 6 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_captura_pantalla_movil, añadirAlGrid = false, accion = {
+                        solicitarCapturaPantallaMovil()
+                    }))
+
+                    // F4,C1: eliminar (Delete).
+                    fila == 3 && columna == 0 -> celdasModoIconos.add(agregarCelda(fila, columna, iconoResId = R.drawable.ic_eliminar, añadirAlGrid = false, repetir = true, accion = {
+                        enviarTecla("delete", true)
+                        enviarTecla("delete", false)
+                    }))
+
+                    // Resto de celdas de F1-F4 sin uso especifico todavia
+                    // (por ahora solo la fila F4 completa): quedan vacias en
+                    // modo "iconos", pero tambien entran en celdasModoIconos
+                    // para que el toggle de "Combinaciones" las reemplace
+                    // por letras igual que a las demas de esas 4 filas. F5 y
+                    // F6 nunca entran aca: quedan fijas siempre. Estas celdas
+                    // van con añadirAlGrid = false, igual que el resto de
+                    // celdasModoIconos: si no, quedan agregadas al grid DOS
+                    // VECES (una aca y otra dentro de actualizarModoTecladoPc,
+                    // que ahora se llama tambien al abrir la app), lo que
+                    // tira IllegalStateException ("child already has a
+                    // parent") y crashea la app apenas se abre.
+                    else -> {
+                        if (fila in 0..3) {
+                            celdasModoIconos.add(agregarCelda(fila, columna, añadirAlGrid = false))
+                        } else {
+                            agregarCelda(fila, columna)
+                        }
+                    }
                 }
             }
         }
+
+        // ==== Modo "Combinaciones": letras A-Z superpuestas en las mismas
+        // 4 filas de arriba (F1-F4), reemplazando esos iconos mientras el
+        // switch esta activo. Se arman una sola vez aca, con añadirAlGrid =
+        // false (el modo inicial es "iconos", asi que no se agregan al
+        // GridLayout todavia), y se van intercambiando con celdasModoIconos
+        // en actualizarModoTecladoPc(). F2 (fila 1) solo cubre columnas
+        // 0-4: las columnas 5-6 son el backspace, que es fijo.
+        val filasLetras = listOf(
+            0 to "ABCDEFG",
+            1 to "HIJKL",
+            2 to "MNOPQRS",
+            3 to "TUVWXYZ"
+        )
+        for ((fila, letras) in filasLetras) {
+            for ((columna, letra) in letras.withIndex()) {
+                val texto = letra.toString()
+                celdasModoLetras.add(
+                    agregarCelda(fila, columna, texto = texto, añadirAlGrid = false, accion = {
+                        val tecla = texto.lowercase()
+                        enviarTecla(tecla, true)
+                        enviarTecla(tecla, false)
+                    })
+                )
+            }
+        }
+
+        // Sincroniza el estado inicial de la grilla: al construir la
+        // pantalla, celdasModoIconos y celdasModoLetras ya existen pero
+        // ninguna esta agregada al grid todavia (todas se crearon con
+        // añadirAlGrid = false). Sin esta llamada, F1-F4 arrancan vacias y
+        // recien se completan al tocar el switch "Combinaciones" una vez
+        // (ese toggle dispara actualizarModoTecladoPc desde su listener,
+        // que es la unica parte del codigo que agregaba las celdas al
+        // grid). Llamarla aca agrega el juego que corresponde segun
+        // combinacionesActivas (iconos, ya que arranca en false) desde el
+        // primer momento en que se abre la pestania "Teclas PC".
+        actualizarModoTecladoPc()
 
         contenedor.addView(grid)
         return contenedor

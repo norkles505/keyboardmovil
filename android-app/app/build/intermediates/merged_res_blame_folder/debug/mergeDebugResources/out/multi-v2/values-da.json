@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.tecladomovil.app-mergeDebugResources-21:/values-da/values-da.xml",
+            "outputFile": "com.tecladomovil.app-mergeDebugResources-22:/values-da/values-da.xml",
             "map": [
                 {
                     "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-4\\2a521f8f95c27d1d2e4e908a75207c20\\transformed\\appcompat-1.7.0\\res\\values-da\\values-da.xml",
@@ -18,6 +18,23 @@
                         "startOffsets": "105,205,299,415,500,600,713,791,867,958,1051,1144,1238,1332,1425,1520,1618,1709,1800,1879,1987,2094,2190,2303,2406,2507,2660,3484",
                         "endColumns": "99,93,115,84,99,112,77,75,90,92,92,93,93,92,94,97,90,90,78,107,106,95,112,102,100,152,96,79",
                         "endOffsets": "200,294,410,495,595,708,786,862,953,1046,1139,1233,1327,1420,1515,1613,1704,1795,1874,1982,2089,2185,2298,2401,2502,2655,2752,3559"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-4\\4ad2d4566a50f3305cfed6a82e4b3f55\\transformed\\zxing-android-embedded-4.3.0\\res\\values-da\\values-da.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,114,161,307",
+                        "endColumns": "58,46,145,109",
+                        "endOffsets": "109,156,302,412"
+                    },
+                    "to": {
+                        "startLines": "38,39,40,41",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "3665,3724,3771,3917",
+                        "endColumns": "58,46,145,109",
+                        "endOffsets": "3719,3766,3912,4022"
                     }
                 },
                 {

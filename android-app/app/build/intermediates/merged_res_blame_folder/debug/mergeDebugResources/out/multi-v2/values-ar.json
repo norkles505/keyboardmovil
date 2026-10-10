@@ -1,8 +1,25 @@
 {
     "logs": [
         {
-            "outputFile": "com.tecladomovil.app-mergeDebugResources-21:/values-ar/values-ar.xml",
+            "outputFile": "com.tecladomovil.app-mergeDebugResources-22:/values-ar/values-ar.xml",
             "map": [
+                {
+                    "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-4\\4ad2d4566a50f3305cfed6a82e4b3f55\\transformed\\zxing-android-embedded-4.3.0\\res\\values-ar\\values-ar.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,117,167,300",
+                        "endColumns": "61,49,132,109",
+                        "endOffsets": "112,162,295,405"
+                    },
+                    "to": {
+                        "startLines": "38,39,40,41",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "3654,3716,3766,3899",
+                        "endColumns": "61,49,132,109",
+                        "endOffsets": "3711,3761,3894,4004"
+                    }
+                },
                 {
                     "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-4\\931a813c0b1c56b2e997d06cbf8e44a0\\transformed\\core-1.13.1\\res\\values-ar\\values-ar.xml",
                     "from": {

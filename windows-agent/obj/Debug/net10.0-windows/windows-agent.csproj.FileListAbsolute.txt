@@ -12,3 +12,9 @@ C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-wind
 C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\windows-agent.pdb
 C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\windows-agent.genruntimeconfig.cache
 C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\ref\windows-agent.dll
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\windows-agent.sourcelink.json
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\bin\Debug\net10.0-windows\System.Management.dll
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\bin\Debug\net10.0-windows\runtimes\win\lib\net8.0\System.Management.dll
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\windows-agent.csproj.AssemblyReference.cache
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\obj\Debug\net10.0-windows\windows-.3D31FEA5.Up2Date
+C:\Users\HP\Desktop\proyectos\keyboardmovil\windows-agent\bin\Debug\net10.0-windows\QRCoder.dll

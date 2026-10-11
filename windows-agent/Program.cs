@@ -815,7 +815,8 @@ internal static class KeySender
         0x26, 0x28, 0x25, 0x27, // arriba, abajo, izquierda, derecha
         0x24, 0x23,             // home, end
         0x21, 0x22,             // pageup, pagedown
-        0x2D, 0x2E              // insert, delete
+        0x2D, 0x2E,             // insert, delete
+        0x5B, 0x5C, 0x5D        // win izq/der y menu: tambien son "extended"; sin esto Win+V escribia solo "v"
     };
 
     private static readonly Dictionary<string, ushort> KeyMap = BuildKeyMap();

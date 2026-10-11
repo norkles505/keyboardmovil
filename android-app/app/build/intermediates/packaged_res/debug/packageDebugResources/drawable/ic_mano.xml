@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Icono de mano (contorno), dibujado a mano como vector drawable: cuatro
+    dedos, el pulgar y la palma, todo como trazo (stroke) sin relleno, igual
+    que el resto de los iconos de la grilla. Viewport 24x24.
+
+    El color del trazo queda fijo en el TEXTO_PRIMARIO del modo oscuro de la
+    app (#EAEAEA), igual que los demas iconos.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Indice, medio, anular y menique -->
+    <path
+        android:pathData="M8 14 V6.5 A1.5 1.5 0 0 1 11 6.5 V10 M11 10 V5 A1.5 1.5 0 0 1 14 5 V10 M14 10 V6 A1.5 1.5 0 0 1 17 6 V10 M17 10 V8.5 A1.5 1.5 0 0 1 20 8.5 V15"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Palma y pulgar -->
+    <path
+        android:pathData="M20 15 C20 18.5 17.5 21 14 21 H12.5 C10.5 21 9.5 20.3 8.5 19 L4.5 14 A1.4 1.4 0 0 1 6.7 12.3 L8 14"
+        android:strokeColor="#EAEAEA"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+</vector>

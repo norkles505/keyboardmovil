@@ -1,5 +1,9 @@
 [
     {
+        "merged": "com.tecladomovil.app-debug-24:/drawable_ic_mano.xml.flat",
+        "source": "com.tecladomovil.app-main-26:/drawable/ic_mano.xml"
+    },
+    {
         "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-debug-24:\\drawable_ic_copiar.xml.flat",
         "source": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-main-26:\\drawable\\ic_copiar.xml"
     },
@@ -64,10 +68,6 @@
         "source": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-main-26:\\drawable\\ic_izquierda.xml"
     },
     {
-        "merged": "com.tecladomovil.app-debug-24:/drawable_ic_eliminar.xml.flat",
-        "source": "com.tecladomovil.app-main-26:/drawable/ic_eliminar.xml"
-    },
-    {
         "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-debug-24:\\drawable_ic_seleccionar_todo.xml.flat",
         "source": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-main-26:\\drawable\\ic_seleccionar_todo.xml"
     },
@@ -82,6 +82,10 @@
     {
         "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-debug-24:\\drawable_ic_cortar.xml.flat",
         "source": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-main-26:\\drawable\\ic_cortar.xml"
+    },
+    {
+        "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-debug-24:\\drawable_ic_eliminar.xml.flat",
+        "source": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-main-26:\\drawable\\ic_eliminar.xml"
     },
     {
         "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.7\\com.tecladomovil.app-debug-24:\\drawable_ic_mute.xml.flat",

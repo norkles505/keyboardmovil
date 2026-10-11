@@ -15,6 +15,7 @@ drawable ic_deshacer
 drawable ic_eliminar
 drawable ic_enter
 drawable ic_izquierda
+drawable ic_mano
 drawable ic_mas_brillo
 drawable ic_menos_brillo
 drawable ic_mute

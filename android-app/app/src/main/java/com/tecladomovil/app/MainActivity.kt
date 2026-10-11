@@ -667,7 +667,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             // Un poco de aire arriba, para que la grilla no quede pegada
             // justo debajo de la barra de pestanias.
-            setPadding(0, dp(50), 0, 0)
+            setPadding(0, dp(10), 0, 0)
         }
         panelTecladoPc.addView(buildPanelTecladoPc())
         contenedor.addView(panelTecladoPc)
@@ -1308,6 +1308,105 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Grilla VACIA de 6x7 con la misma forma que la de Teclas PC (incluye la
+     * celda ancha de 2 columnas en F2,C6-7 y la alta de 2 filas en F5-6,C7),
+     * pero sin iconos, texto ni acciones: la funcion de cada boton se define
+     * despues. Se usa en la sub-pestaña "Blender".
+     */
+    private fun buildGrillaVacia(): GridLayout {
+        val filas = 6
+        val columnas = 7
+        val altoCelda = dp(46)
+        // Mismos calculos que buildPanelTecladoPc para que las celdas midan
+        // exactamente lo mismo y la grilla calce con el ancho de la pantalla.
+        val margenPorCelda = dp(4)
+        val anchoDisponible = resources.displayMetrics.widthPixels - (columnas * margenPorCelda)
+        val anchoCelda = anchoDisponible / columnas
+
+        val grid = GridLayout(this).apply {
+            rowCount = filas
+            columnCount = columnas
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+
+        fun celda(fila: Int, columna: Int, rowSpan: Int = 1, colSpan: Int = 1, texto: String = "", iconoResId: Int? = null, accion: (() -> Unit)? = null) {
+            val boton: View = if (iconoResId != null) {
+                // Con icono: ImageButton (el icono queda bien centrado, igual
+                // que en la grilla de Titulo1).
+                ImageButton(this).apply {
+                    setImageResource(iconoResId)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    minimumWidth = 0
+                    minimumHeight = 0
+                    stateListAnimator = null
+                    elevation = 0f
+                }
+            } else Button(this).apply {
+                text = texto
+                isAllCaps = false
+                setPadding(0, 0, 0, 0)
+                minWidth = 0
+                minHeight = 0
+                stateListAnimator = null
+                elevation = 0f
+            }
+            if (boton is Button) aplicarEstiloBoton(boton)
+            boton.background = crearFondoConPresion(Colores.BOTON)
+            boton.layoutParams = GridLayout.LayoutParams(
+                GridLayout.spec(fila, rowSpan, GridLayout.CENTER),
+                GridLayout.spec(columna, colSpan, GridLayout.CENTER)
+            ).apply {
+                width = anchoCelda * colSpan + (colSpan - 1) * margenPorCelda
+                height = altoCelda * rowSpan + (rowSpan - 1) * margenPorCelda
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            }
+            if (accion != null) {
+                boton.setOnClickListener {
+                    avisarSiDesconectado()
+                    accion()
+                }
+            }
+            grid.addView(boton)
+        }
+
+        for (fila in 0 until filas) {
+            for (columna in 0 until columnas) {
+                when {
+                    fila == 1 && columna == 5 -> celda(fila, columna, colSpan = 2)
+                    fila == 1 && columna == 6 -> Unit // cubierta por la celda ancha
+                    fila == 4 && columna == 6 -> celda(fila, columna, rowSpan = 2)
+                    fila == 5 && columna == 6 -> Unit // cubierta por la celda alta
+                    fila == 0 && columna == 0 -> celda(fila, columna, texto = "G", accion = {
+                        enviarTecla("g", true)
+                        enviarTecla("g", false)
+                    })
+                    fila == 0 && columna == 1 -> celda(fila, columna, texto = "R", accion = {
+                        enviarTecla("r", true)
+                        enviarTecla("r", false)
+                    })
+                    fila == 0 && columna == 2 -> celda(fila, columna, texto = "S", accion = {
+                        enviarTecla("s", true)
+                        enviarTecla("s", false)
+                    })
+                    // F1,C4: icono de mano. Todavia sin accion asignada.
+                    fila == 0 && columna == 3 -> celda(fila, columna, iconoResId = R.drawable.ic_mano)
+                    fila == 0 && columna == 4 -> celda(fila, columna, texto = "Q", accion = {
+                        enviarTecla("q", true)
+                        enviarTecla("q", false)
+                    })
+                    fila == 0 && columna == 5 -> celda(fila, columna, texto = "E", accion = {
+                        enviarTecla("e", true)
+                        enviarTecla("e", false)
+                    })
+                    else -> celda(fila, columna)
+                }
+            }
+        }
+        return grid
+    }
+
     private fun buildPanelTecladoPc(): LinearLayout {
         val contenedor = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
@@ -1335,6 +1434,34 @@ class MainActivity : AppCompatActivity() {
                 actualizarModoTecladoPc()
             }
         }
+        // Sub-pestañas de Teclas PC (por ahora solo titulos, el contenido de
+        // la 2 y la 3 se define despues). La 1 es la grilla de siempre
+        // (switch "Combinaciones" + botones). Van arriba del switch.
+        var seleccionarSubpestana: (Int) -> Unit = {}
+        val botonesSubpestana = mutableListOf<Button>()
+        val barraSubpestanas = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(16), 0, dp(16), dp(8))
+        }
+        listOf("Titulo1", "Blender", "Titulo3").forEachIndexed { indice, titulo ->
+            val boton = tabButton(titulo) { seleccionarSubpestana(indice) }.apply {
+                // Pestañas chicas (no ocupan todo el ancho ni mucha altura)
+                // para que quepan en el espacio vacio de arriba y la grilla
+                // quede donde estaba antes.
+                textSize = 11f
+                setPadding(0, 0, 0, 0)
+                minHeight = 0
+                minimumHeight = 0
+                minWidth = 0
+                minimumWidth = 0
+                layoutParams = LinearLayout.LayoutParams(dp(84), dp(32)).apply {
+                    setMargins(0, 0, dp(6), 0)
+                }
+            }
+            botonesSubpestana.add(boton)
+            barraSubpestanas.addView(boton)
+        }
+        contenedor.addView(barraSubpestanas)
         contenedor.addView(switchCombinaciones)
 
         // Grilla de 6 filas x 7 columnas (segun el boceto). Se usa GridLayout
@@ -1725,6 +1852,36 @@ class MainActivity : AppCompatActivity() {
         actualizarModoTecladoPc()
 
         contenedor.addView(grid)
+
+        // Paneles de las sub-pestañas 2 y 3: vacios por ahora.
+        val panelesVacios = listOf(2, 3).map { numero ->
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(dp(16), dp(16), dp(16), 0)
+                if (numero == 2) {
+                    // Blender: grilla vacia a todo el ancho, sin padding.
+                    setPadding(0, 0, 0, 0)
+                    addView(buildGrillaVacia())
+                } else addView(TextView(this@MainActivity).apply {
+                    text = "${if (numero == 2) "Blender" else "Titulo3"}: vacio por ahora"
+                    setTextColor(Color.parseColor(Colores.TEXTO_SECUNDARIO))
+                })
+            }
+        }
+        panelesVacios.forEach { contenedor.addView(it) }
+
+        seleccionarSubpestana = { indice ->
+            switchCombinaciones.visibility = if (indice == 0) View.VISIBLE else View.INVISIBLE
+            grid.visibility = if (indice == 0) View.VISIBLE else View.GONE
+            panelesVacios.forEachIndexed { i, panel ->
+                panel.visibility = if (indice == i + 1) View.VISIBLE else View.GONE
+            }
+            botonesSubpestana.forEachIndexed { i, boton ->
+                boton.setBackgroundColor(Color.parseColor(if (i == indice) "#3F3F3F" else Colores.BOTON))
+            }
+        }
+        seleccionarSubpestana(0)
         return contenedor
     }
 }

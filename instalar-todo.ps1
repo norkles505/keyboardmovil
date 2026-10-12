@@ -185,6 +185,67 @@ if (Test-Path $code) {
 # ---------------------------------------------------------------------
 # 6. Resumen
 # ---------------------------------------------------------------------
+Write-Host "`n=== Ajustes de los proyectos ===" -ForegroundColor Yellow
+$proy = @('C:\Users\HP\Desktop\proyectos', (Split-Path -Parent $PSScriptRoot)) | Where-Object { $_ -and (Test-Path "$_\drawengine") } | Select-Object -First 1
+if (-not $proy) {
+    Write-Host "No encontre la carpeta proyectos (con drawengine dentro). Restaurala y vuelve a ejecutar este script." -ForegroundColor Red
+    $fallos.Add('Carpeta proyectos no encontrada (no se hizo el venv ni el ajuste del JDK)')
+} else {
+    # a) Entorno virtual de drawengine
+    try {
+        $venv = "$proy\drawengine\venv"
+        if (Test-Path $venv) { Remove-Item $venv -Recurse -Force }
+        py -3.13 -m venv $venv
+        & "$venv\Scripts\python.exe" -m pip install --upgrade pip
+        & "$venv\Scripts\python.exe" -m pip install -r "$proy\drawengine\requirements.txt"
+        if ($LASTEXITCODE -ne 0) { $fallos.Add('venv de drawengine (fallo pip install)') }
+    } catch { $fallos.Add('venv de drawengine') }
+
+    # b) Los compilar.bat tienen fija la version del JDK 17: se ajusta a la que quedo instalada
+    try {
+        $j17 = Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -Filter 'jdk-17*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($j17) {
+            Get-ChildItem $proy -Recurse -Filter compilar.bat -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\(build|dist|venv)\\' } | ForEach-Object {
+                $txt = [IO.File]::ReadAllText($_.FullName)
+                $nuevo = $txt -replace 'jdk-17[0-9.]*-hotspot', $j17.Name
+                if ($nuevo -ne $txt) {
+                    [IO.File]::WriteAllText($_.FullName, $nuevo, (New-Object Text.UTF8Encoding($false)))
+                    Write-Host "JDK 17 ajustado en $($_.FullName)"
+                }
+            }
+        } else { $fallos.Add('No se encontro el JDK 17 para ajustar los compilar.bat') }
+    } catch { $fallos.Add('Ajuste de la ruta del JDK 17 en los compilar.bat') }
+}
+
+# c0) uv + blender-mcp: deja blender-mcp.exe en C:\Users\HP\.local\bin (la ruta que usa tu config de Claude Desktop)
+try {
+    Instalar 'uv' @('astral-sh.uv')
+    Refrescar-Path
+    $bm = 'C:\Users\HP\Documents\MCP\blender-mcp'
+    if (-not (Test-Path "$bm\pyproject.toml")) {
+        Write-Host "No existe $bm : restaura Documents\MCP y vuelve a ejecutar: uv tool install --force <esa carpeta>" -ForegroundColor DarkYellow
+    } elseif (Get-Command uv -ErrorAction SilentlyContinue) {
+        Push-Location $bm
+        uv tool install --force .
+        if ($LASTEXITCODE -ne 0) { $fallos.Add('Instalar blender-mcp con uv') }
+        Pop-Location
+    } else { $fallos.Add('uv no quedo disponible (cierra y abre la consola, luego: uv tool install --force .  dentro de blender-mcp)') }
+} catch { $fallos.Add('uv / blender-mcp') }
+
+# c) Emulador MeshCraftPhone (lo usan los emulador.bat)
+try {
+    $avdm = 'C:\Android\android-sdk\cmdline-tools\latest\bin\avdmanager.bat'
+    if ((Test-Path $avdm) -and -not (Test-Path "$env:USERPROFILE\.android\avd\MeshCraftPhone.avd")) {
+        'no' | & $avdm create avd -n MeshCraftPhone -k 'system-images;android-34;google_apis;x86_64' --device pixel_6 --force
+        if ($LASTEXITCODE -ne 0) { $fallos.Add('Crear el emulador MeshCraftPhone') }
+    }
+} catch { $fallos.Add('Crear el emulador MeshCraftPhone') }
+
+# d) Hypervisor de Windows (el emulador lo necesita; ademas la virtualizacion debe estar activa en la BIOS)
+try {
+    Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All -NoRestart -ErrorAction Stop | Out-Null
+} catch { $fallos.Add('Activar Windows Hypervisor Platform (hazlo en Activar o desactivar caracteristicas de Windows)') }
+
 Write-Host "`n=== 6/6 Resumen ===" -ForegroundColor Yellow
 if ($fallos.Count -eq 0) {
     Write-Host "Todo se instalo sin errores." -ForegroundColor Green

@@ -1,0 +1,22 @@
+# Android / Gradle (se regeneran al compilar)
+.gradle/
+build/
+*.apk
+android-app/local.properties
+
+# .NET (agente de Windows)
+windows-agent/bin/
+windows-agent/obj/
+
+# Agente de Linux
+linux-agent/.venv/
+__pycache__/
+*.pyc
+
+# Archivos locales de depuracion (IPs, seriales del celular, logs)
+android-app/_*.txt
+android-app/wifi_device.txt
+
+# Editor
+.vscode/
+.idea/

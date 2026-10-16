@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sube todos los cambios a GitHub con un mensaje de commit aleatorio.
-# Uso:
+# Uso: 
 #   ./push.sh                 -> mensaje aleatorio
 #   ./push.sh "mi mensaje"    -> usa tu propio mensaje
 cd "$(dirname "$0")" || exit 1
